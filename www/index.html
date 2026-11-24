@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>你画我猜</title>
+<style>
+  :root {
+    --bg: #1a1a2e;
+    --card: #16213e;
+    --primary: #e94560;
+    --accent: #0f3460;
+    --text: #eee;
+    --text-dim: #999;
+    --gold: #f5c518;
+    --green: #4ecca3;
+    --radius: 14px;
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { width:100%; height:100%; overflow:hidden; touch-action:manipulation; }
+  body {
+    font-family: -apple-system,'PingFang SC','Microsoft YaHei',sans-serif;
+    background: var(--bg); color: var(--text);
+    user-select: none; -webkit-user-select: none;
+  }
+
+  /* ====== Lobby ====== */
+  #lobby {
+    display:flex; align-items:center; justify-content:center;
+    min-height:100vh; min-height:100dvh; padding:24px;
+  }
+  .lobby-card {
+    background:var(--card); border-radius:var(--radius);
+    padding:36px 24px; width:100%; max-width:380px;
+    box-shadow:0 8px 32px rgba(0,0,0,.3);
+  }
+  .lobby-card h1 {
+    font-size:2.2em; text-align:center; margin-bottom:4px;
+    background:linear-gradient(135deg,#e94560,#f5c518);
+    -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+  }
+  .lobby-card .subtitle { text-align:center; color:var(--text-dim); margin-bottom:28px; font-size:.95em; }
+  .input-group { margin-bottom:18px; }
+  .input-group label { display:block; font-size:.85em; margin-bottom:6px; color:var(--text-dim); }
+  .input-group input, .input-group select {
+    width:100%; padding:14px 16px; font-size:1em;
+    background:var(--accent); border:1px solid transparent;
+    border-radius:var(--radius); color:var(--text);
+    transition:border-color .2s; -webkit-appearance:none;
+  }
+  .input-group input:focus { outline:none; border-color:var(--primary); }
+  .btn {
+    width:100%; padding:15px; border:none; border-radius:var(--radius);
+    font-size:1.05em; font-weight:600; cursor:pointer; transition:all .15s;
+    margin-top:8px; touch-action:manipulation;
+  }
+  .btn:active { transform:scale(.97); }
+  .btn-primary { background:var(--primary); color:#fff; }
+  .btn-secondary { background:var(--accent); color:var(--text); }
+  .btn-sm { width:auto; padding:10px 18px; font-size:.9em; }
+
+  /* ====== Room (Waiting) ====== */
+  #room { display:none; flex-direction:column; min-height:100vh; min-height:100dvh; padding:24px 20px calc(20px + var(--safe-bottom)); }
+  .room-header { display:flex; align-items:center; justify-content:space-between; padding-bottom:16px; border-bottom:1px solid var(--accent); margin-bottom:16px; }
+  .room-header h2 { font-size:1.2em; display:flex; align-items:center; gap:8px; }
+  .room-code { color:var(--primary); }
+  .players-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:20px; }
+  .player-chip {
+    background:var(--accent); border-radius:var(--radius);
+    padding:14px 16px; display:flex; align-items:center; gap:12px;
+  }
+  .player-chip .avatar {
+    width:44px; height:44px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    font-size:1.2em; font-weight:700; background:var(--primary); flex-shrink:0;
+  }
+  .player-chip .info { font-size:.9em; }
+  .player-chip .score { color:var(--gold); font-size:.85em; }
+  .settings-row { display:flex; gap:12px; margin-bottom:20px; }
+  .settings-row .input-group { margin-bottom:0; flex:1; }
+  .settings-row select { font-size:.95em; padding:12px; }
+
+  /* ====== Game Layout ====== */
+  #game { display:none; width:100%; height:100vh; height:100dvh; position:relative; overflow:hidden; }
+
+  /* Top bar */
+  #game-topbar {
+    position:absolute; top:0; left:0; right:0; z-index:30;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:8px 12px; padding-top:max(8px, env(safe-area-inset-top));
+    background:rgba(22,33,62,.92); backdrop-filter:blur(8px);
+    gap:8px;
+  }
+  #game-topbar .round-label { font-size:.8em; color:var(--text-dim); }
+  #game-topbar .round-num { font-weight:700; color:var(--gold); font-size:.9em; }
+  .game-word-hint {
+    flex:1; text-align:center; font-size:1em; font-weight:700;
+    letter-spacing:2px; color:var(--primary);
+  }
+  .timer-badge {
+    font-size:1em; font-weight:700; min-width:36px; text-align:center;
+    padding:4px 10px; border-radius:20px; background:var(--accent);
+  }
+  .timer-badge.urgent { background:var(--danger); animation:pulse .6s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+  /* Canvas */
+  #game-canvas-area {
+    position:absolute; inset:0; background:#fff;
+  }
+  canvas { display:block; width:100%; height:100%; touch-action:none; }
+
+  /* Floating undo */
+  .float-undo {
+    position:absolute; bottom:100px; right:12px; z-index:25;
+    width:52px; height:52px; border-radius:50%;
+    background:rgba(0,0,0,.5); border:2px solid rgba(255,255,255,.3);
+    color:#fff; font-size:1.4em; display:none;
+    align-items:center; justify-content:center; cursor:pointer;
+    backdrop-filter:blur(4px);
+  }
+  .float-undo:active { background:rgba(0,0,0,.7); }
+
+  /* ====== Bottom Sheet ====== */
+  #bottom-sheet {
+    position:absolute; bottom:0; left:0; right:0; z-index:35;
+    max-height:70vh; border-radius:20px 20px 0 0;
+    background:var(--card); box-shadow:0 -4px 20px rgba(0,0,0,.4);
+    display:flex; flex-direction:column;
+    transform:translateY(calc(100% - 52px));
+    transition:transform .3s cubic-bezier(.4,0,.2,1);
+    padding-bottom:var(--safe-bottom);
+  }
+  #bottom-sheet.open { transform:translateY(0); }
+  .sheet-handle {
+    display:flex; justify-content:center; padding:10px 0 6px; cursor:pointer;
+    min-height:36px; flex-shrink:0;
+  }
+  .sheet-handle-bar {
+    width:40px; height:5px; border-radius:3px; background:rgba(255,255,255,.3);
+  }
+  .sheet-title {
+    text-align:center; font-size:.75em; color:var(--text-dim);
+    padding-bottom:4px; flex-shrink:0;
+  }
+
+  /* Tools */
+  .sheet-tools { padding:8px 16px 14px; display:none; flex-direction:column; gap:12px; }
+  .sheet-tools.active { display:flex; }
+  .tool-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .tool-row-label { font-size:.75em; color:var(--text-dim); min-width:32px; }
+  .color-btn {
+    width:36px; height:36px; border-radius:50%;
+    border:3px solid transparent; cursor:pointer; transition:all .12s; flex-shrink:0;
+  }
+  .color-btn.active { border-color:#fff; transform:scale(1.15); }
+  .pill-btn {
+    padding:8px 16px; border-radius:20px; font-size:.85em; font-weight:500;
+    border:none; cursor:pointer; transition:all .12s;
+    background:var(--accent); color:var(--text); touch-action:manipulation;
+  }
+  .pill-btn.active { background:var(--primary); color:#fff; }
+  .pill-btn.danger.active { background:var(--danger); }
+  .action-row { display:flex; gap:8px; }
+  .action-row .pill-btn { flex:1; text-align:center; }
+
+  /* Chat */
+  .sheet-chat { display:none; flex-direction:column; flex:1; overflow:hidden; padding:0 12px 8px; }
+  .sheet-chat.active { display:flex; min-height:200px; }
+  #chat-messages {
+    flex:1; overflow-y:auto; padding:8px 4px;
+    display:flex; flex-direction:column; gap:4px;
+    -webkit-overflow-scrolling:touch;
+  }
+  .chat-msg { font-size:.82em; padding:2px 0; word-break:break-all; }
+  .chat-msg.system { color:var(--green); text-align:center; font-size:.75em; }
+  .chat-msg.correct { color:var(--gold); text-align:center; font-weight:600; font-size:.85em; }
+  .chat-input-row {
+    display:flex; gap:8px; padding:8px 0;
+    border-top:1px solid var(--accent); flex-shrink:0;
+  }
+  .chat-input-row input {
+    flex:1; padding:12px 14px; border-radius:20px;
+    background:var(--accent); border:none; color:var(--text); font-size:.95em;
+  }
+  .chat-input-row input:focus { outline:none; }
+  .chat-input-row input:disabled { opacity:.5; }
+  .chat-send {
+    padding:8px 18px; border-radius:20px; border:none;
+    background:var(--primary); color:#fff; font-weight:600; font-size:.9em;
+    cursor:pointer; touch-action:manipulation;
+  }
+
+  /* ====== Floating Score ====== */
+  .float-score {
+    position:absolute; top:60px; right:12px; z-index:28;
+    padding:8px 14px; border-radius:20px;
+    background:var(--accent); border:1px solid rgba(255,255,255,.15);
+    color:var(--text); font-size:.85em; cursor:pointer;
+    display:flex; align-items:center; gap:6px;
+    touch-action:manipulation;
+  }
+
+  /* ====== Score Overlay ====== */
+  #score-overlay {
+    display:none; position:absolute; inset:0; z-index:40;
+    background:rgba(0,0,0,.7); flex-direction:column; justify-content:center;
+    padding:40px 32px;
+  }
+  #score-overlay.show { display:flex; }
+  .score-card {
+    background:var(--card); border-radius:var(--radius); padding:24px;
+    max-height:70vh; overflow-y:auto;
+  }
+  .score-card h3 { text-align:center; margin-bottom:16px; font-size:1.1em; }
+  .score-row {
+    display:flex; justify-content:space-between; align-items:center;
+    padding:10px 0; border-bottom:1px solid rgba(255,255,255,.06); font-size:.95em;
+  }
+  .score-row.drawing { color:var(--primary); font-weight:600; }
+
+  /* ====== End Screen ====== */
+  #game-end {
+    display:none; position:absolute; inset:0; z-index:50;
+    background:rgba(0,0,0,.85); align-items:center; justify-content:center;
+    padding:24px;
+  }
+  #game-end.show { display:flex; }
+  .end-card {
+    background:var(--card); border-radius:var(--radius);
+    padding:32px 24px; width:100%; max-width:360px; text-align:center;
+  }
+  .end-card h2 { font-size:1.6em; margin-bottom:4px; color:var(--gold); }
+  .end-card .subtitle { color:var(--text-dim); margin-bottom:20px; }
+  .ranking-row {
+    display:flex; align-items:center; gap:12px; padding:12px 16px;
+    background:var(--accent); border-radius:var(--radius); margin-bottom:8px;
+    font-size:.9em;
+  }
+  .ranking-row.rank1 { background:linear-gradient(135deg, rgba(245,197,24,.35), var(--accent)); }
+  .ranking-row .rank-badge {
+    width:36px; height:36px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    font-weight:700; font-size:.85em;
+  }
+  .ranking-row .rank-name { flex:1; text-align:left; }
+  .ranking-row .rank-score { color:var(--gold); font-weight:700; }
+
+  /* ====== Toast ====== */
+  .toast {
+    position:fixed; top:20px; left:50%; transform:translateX(-50%);
+    background:var(--danger); color:#fff; padding:12px 24px;
+    border-radius:var(--radius); z-index:100; font-size:.9em;
+    animation:slideDown .3s;
+  }
+  @keyframes slideDown { from{opacity:0; transform:translateX(-50%) translateY(-20px)} }
+
+  /* ====== Word card (drawer) ====== */
+  #word-card {
+    display:none; position:absolute; top:56px; left:50%; transform:translateX(-50%);
+    z-index:26; background:var(--primary); color:#fff;
+    padding:6px 20px; border-radius:20px; font-weight:700; font-size:1em;
+    white-space:nowrap;
+  }
+  #word-card.show { display:block; }
+</style>
+</head>
+<body>
+
+<div id="lobby">
+  <div class="lobby-card">
+    <h1>🎨 你画我猜</h1>
+    <p class="subtitle">一人作画，众人来猜</p>
+    <div class="input-group"><label>你的昵称</label><input id="nameInput" placeholder="输入昵称" maxlength="12"></div>
+    <div class="input-group"><label>房间号</label><input id="roomInput" placeholder="输入房间号（如 123）" maxlength="20"></div>
+    <button class="btn btn-primary" onclick="createRoom()">✨ 创建房间</button>
+    <button class="btn btn-secondary" onclick="joinRoom()">🚪 加入房间</button>
+  </div>
+</div>
+
+<div id="room">
+  <div class="room-header">
+    <h2>🏠 房间 <span class="room-code" id="roomCode"></span></h2>
+    <span style="color:var(--text-dim)" id="playerCount">0 人</span>
+  </div>
+  <div class="players-grid" id="playersList"></div>
+  <div class="settings-row">
+    <div class="input-group"><label>每局轮数</label>
+      <select id="roundsSelect" onchange="setRounds()">
+        <option value="1">1</option><option value="2">2</option>
+        <option value="3" selected>3</option><option value="4">4</option><option value="5">5</option>
+      </select>
+    </div>
+    <div class="input-group"><label>时间 (秒)</label>
+      <select id="timeSelect" onchange="setTime()">
+        <option value="30">30</option><option value="45">45</option>
+        <option value="60" selected>60</option><option value="90">90</option><option value="120">120</option>
+      </select>
+    </div>
+  </div>
+  <button class="btn btn-primary" onclick="startGame()" id="startBtn">🎮 开始游戏</button>
+  <button class="btn btn-secondary btn-sm" onclick="leaveRoom()" style="margin-top:12px">⬅ 离开房间</button>
+</div>
+
+<div id="game">
+  <div id="game-topbar">
+    <div><span class="round-label">回合</span> <span class="round-num" id="roundInfo">1/3</span></div>
+    <div class="game-word-hint" id="wordHint">????</div>
+    <div class="timer-badge" id="timerDisplay">60</div>
+  </div>
+
+  <div id="word-card"></div>
+
+  <div id="game-canvas-area">
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <div class="float-undo" id="floatUndo" onclick="undoLast()">↩</div>
+
+  <div class="float-score" id="floatScore" onclick="toggleScore()">📊 分数</div>
+
+  <div id="bottom-sheet">
+    <div class="sheet-handle" id="sheetHandle"><div class="sheet-handle-bar"></div></div>
+    <div class="sheet-title" id="sheetTitle">💬 聊天 & 猜测</div>
+
+    <div class="sheet-tools" id="sheetTools">
+      <div class="tool-row">
+        <span class="tool-row-label">颜色</span>
+        <span class="color-btn active" style="background:#000" onclick="setColor('#000')" data-color="#000"></span>
+        <span class="color-btn" style="background:#e94560" onclick="setColor('#e94560')" data-color="#e94560"></span>
+        <span class="color-btn" style="background:#f5c518" onclick="setColor('#f5c518')" data-color="#f5c518"></span>
+        <span class="color-btn" style="background:#4ecca3" onclick="setColor('#4ecca3')" data-color="#4ecca3"></span>
+        <span class="color-btn" style="background:#3498db" onclick="setColor('#3498db')" data-color="#3498db"></span>
+        <span class="color-btn" style="background:#9b59b6" onclick="setColor('#9b59b6')" data-color="#9b59b6"></span>
+        <span class="color-btn" style="background:#e67e22" onclick="setColor('#e67e22')" data-color="#e67e22"></span>
+        <span class="color-btn" style="background:#fff;border:1px solid #555" onclick="setColor('#fff')" data-color="#fff"></span>
+      </div>
+      <div class="tool-row">
+        <span class="tool-row-label">粗细</span>
+        <button class="pill-btn active" onclick="setSize(4)" data-size="4">细</button>
+        <button class="pill-btn" onclick="setSize(10)" data-size="10">中</button>
+        <button class="pill-btn" onclick="setSize(20)" data-size="20">粗</button>
+      </div>
+      <div class="action-row">
+        <button class="pill-btn danger" onclick="toggleEraser()" id="eraserBtn">🧹 橡皮</button>
+        <button class="pill-btn" onclick="undoLast()">↩ 撤销</button>
+        <button class="pill-btn" onclick="clearCanvas()">🗑 清空</button>
+      </div>
+    </div>
+
+    <div class="sheet-chat" id="sheetChat">
+      <div id="chat-messages"></div>
+      <div class="chat-input-row">
+        <input id="guessInput" placeholder="输入你的猜测..." maxlength="30" autocomplete="off">
+        <button class="chat-send" onclick="sendGuess()">发送</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="score-overlay" onclick="toggleScore()">
+    <div class="score-card" id="scoreCard" onclick="event.stopPropagation()">
+      <h3>📊 分数</h3>
+      <div id="scoreList"></div>
+    </div>
+  </div>
+
+  <div id="game-end">
+    <div class="end-card" id="endContent"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast" style="display:none"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+let socket;
+let playerName = '';
+let roomId = '';
+let currentColor = '#000';
+let currentSize = 4;
+let isErasing = false;
+let isPainting = false;
+let lastX = 0, lastY = 0;
+let myTurn = false;
+let undoStack = [];
+
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+function resizeCanvas() {
+  const dpr = window.devicePixelRatio || 1;
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.scale(dpr, dpr);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+}
+
+window.addEventListener('resize', resizeCanvas);
+window.addEventListener('orientationchange', () => setTimeout(resizeCanvas, 200));
+
+function getPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  if (e.touches) return { x: e.touches[0].clientX - rect.left, y: e.touches[0].clientY - rect.top };
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+}
+
+function pushUndo() {
+  undoStack.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
+  if (undoStack.length > 30) undoStack.shift();
+}
+
+function undoLast() {
+  if (!myTurn || undoStack.length < 2) return;
+  undoStack.pop();
+  const prev = undoStack[undoStack.length - 1];
+  ctx.putImageData(prev, 0, 0);
+  socket.emit('undo-request');
+}
+
+function startPaint(e) {
+  if (!myTurn) return;
+  e.preventDefault();
+  isPainting = true;
+  pushUndo();
+  const pos = getPos(e);
+  lastX = pos.x; lastY = pos.y;
+  ctx.beginPath();
+  ctx.moveTo(pos.x, pos.y);
+  ctx.strokeStyle = isErasing ? '#ffffff' : currentColor;
+  ctx.lineWidth = isErasing ? 30 : currentSize;
+}
+
+function paint(e) {
+  if (!isPainting || !myTurn) return;
+  e.preventDefault();
+  const pos = getPos(e);
+  ctx.strokeStyle = isErasing ? '#ffffff' : currentColor;
+  ctx.lineWidth = isErasing ? 30 : currentSize;
+  ctx.lineTo(pos.x, pos.y);
+  ctx.stroke();
+  socket.emit('draw', {
+    x1: lastX, y1: lastY, x2: pos.x, y2: pos.y,
+    color: isErasing ? '#ffffff' : currentColor,
+    size: isErasing ? 30 : currentSize,
+  });
+  lastX = pos.x; lastY = pos.y;
+}
+
+function stopPaint() {
+  isPainting = false;
+  ctx.closePath();
+}
+
+canvas.addEventListener('mousedown', startPaint);
+canvas.addEventListener('mousemove', paint);
+canvas.addEventListener('mouseup', stopPaint);
+canvas.addEventListener('mouseleave', stopPaint);
+canvas.addEventListener('touchstart', startPaint, { passive: false });
+canvas.addEventListener('touchmove', paint, { passive: false });
+canvas.addEventListener('touchend', stopPaint);
+canvas.addEventListener('touchcancel', stopPaint);
+
+function setColor(color) {
+  currentColor = color;
+  isErasing = false;
+  document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector(`.color-btn[data-color="${color}"]`)?.classList.add('active');
+  document.getElementById('eraserBtn').classList.remove('active');
+}
+
+function setSize(size) {
+  currentSize = size;
+  document.querySelectorAll('.pill-btn:not(.danger)').forEach(b => {
+    if (b.dataset.size) b.classList.toggle('active', parseInt(b.dataset.size) === size);
+  });
+}
+
+function toggleEraser() {
+  isErasing = !isErasing;
+  document.getElementById('eraserBtn').classList.toggle('active', isErasing);
+  document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+}
+
+function clearCanvas() {
+  if (!myTurn) return;
+  pushUndo();
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  socket.emit('clear-canvas');
+}
+
+// Bottom sheet
+let sheetOpen = false;
+const bottomSheet = document.getElementById('bottom-sheet');
+document.getElementById('sheetHandle').addEventListener('click', () => {
+  sheetOpen = !sheetOpen;
+  bottomSheet.classList.toggle('open', sheetOpen);
+  document.getElementById('sheetTitle').textContent = sheetOpen
+    ? (myTurn ? '🎨 画笔工具' : '💬 聊天 & 猜测')
+    : (myTurn ? '▲ 画笔工具' : '▲ 聊天');
+});
+
+function setSheetMode(isDrawer) {
+  document.getElementById('sheetTools').classList.toggle('active', isDrawer);
+  document.getElementById('sheetChat').classList.toggle('active', !isDrawer);
+  if (!isDrawer && !sheetOpen) {
+    sheetOpen = true;
+    bottomSheet.classList.add('open');
+    document.getElementById('sheetTitle').textContent = '💬 聊天 & 猜测';
+  }
+  if (isDrawer) {
+    sheetOpen = false;
+    bottomSheet.classList.remove('open');
+    document.getElementById('sheetTitle').textContent = '▲ 画笔工具';
+  }
+  document.getElementById('floatUndo').style.display = isDrawer ? 'flex' : 'none';
+}
+
+function toggleScore() {
+  document.getElementById('score-overlay').classList.toggle('show');
+}
+
+function updateScores(scores, drawerName) {
+  document.getElementById('scoreList').innerHTML = scores.map(p => `
+    <div class="score-row${p.isDrawing ? ' drawing' : ''}">
+      <span>${p.name}${p.name === drawerName ? ' 🎨' : ''}</span>
+      <span>${p.score ?? 0} 分</span>
+    </div>
+  `).join('');
+}
+
+function addChatMsg(type, text) {
+  const el = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  div.className = `chat-msg ${type}`;
+  div.textContent = text;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+}
+
+function sendGuess() {
+  const input = document.getElementById('guessInput');
+  const text = input.value.trim();
+  if (text && socket) {
+    socket.emit('guess', { text });
+    input.value = '';
+  }
+}
+
+document.getElementById('guessInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') sendGuess();
+});
+
+function connect() {
+  playerName = document.getElementById('nameInput').value.trim() || '匿名玩家';
+  roomId = document.getElementById('roomInput').value.trim() || '';
+  if (!roomId) { toast('请输入房间号'); return; }
+  socket = io();
+  setupSocket();
+}
+
+function setupSocket() {
+  socket.on('connect', () => console.log('connected:', socket.id));
+  socket.on('error-msg', msg => toast(msg));
+
+  socket.on('game-started', room => {
+    document.getElementById('room').style.display = 'none';
+    document.getElementById('game').style.display = 'block';
+    updateRoomUI(room);
+    resizeCanvas();
+  });
+
+  socket.on('round-update', data => {
+    document.getElementById('roundInfo').textContent = `${data.round}/${data.totalRounds}`;
+    const isMe = data.drawerName === playerName;
+    myTurn = isMe;
+
+    document.getElementById('wordHint').textContent = isMe
+      ? '🎨 画吧！' : `${data.wordLength}字 · ${data.category}`;
+    document.getElementById('timerDisplay').textContent = data.timeLeft;
+    document.getElementById('timerDisplay').classList.remove('urgent');
+    document.getElementById('guessInput').disabled = isMe;
+    document.getElementById('guessInput').placeholder = isMe ? '你正在画画...' : '输入猜测';
+
+    setSheetMode(isMe);
+
+    if (!isMe) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+    undoStack = [];
+
+    updateScores(data.players, data.drawerName);
+    addChatMsg('system', `🎨 ${data.drawerName} 开始画画！类别: ${data.category}`);
+    resizeCanvas();
+  });
+
+  socket.on('your-word', data => {
+    const card = document.getElementById('word-card');
+    card.textContent = `🎯 ${data.word}（${data.category}）`;
+    card.classList.add('show');
+    setTimeout(() => card.classList.remove('show'), 3500);
+    addChatMsg('system', `㊙️ 你的词语: ${data.word}`);
+  });
+
+  socket.on('timer-update', data => {
+    document.getElementById('timerDisplay').textContent = data.timeLeft;
+    if (data.timeLeft <= 10) document.getElementById('timerDisplay').classList.add('urgent');
+  });
+
+  socket.on('word-hint', data => {
+    document.getElementById('wordHint').textContent = data.hint;
+  });
+
+  socket.on('draw-data', data => {
+    ctx.strokeStyle = data.color;
+    ctx.lineWidth = data.size;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(data.x1, data.y1);
+    ctx.lineTo(data.x2, data.y2);
+    ctx.stroke();
+  });
+
+  socket.on('canvas-cleared', () => {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  });
+
+  socket.on('undo-request', () => {});
+
+  socket.on('chat-message', data => {
+    addChatMsg(data.type === 'guess' ? 'guess' : 'chat', `[${data.sender}] ${data.text}`);
+  });
+
+  socket.on('correct-guess', data => {
+    addChatMsg('correct', `✨ ${data.playerName} 猜对了！(+${data.points})`);
+    updateScores(data.guesserScores);
+  });
+
+  socket.on('round-end', data => {
+    addChatMsg('system', `⏰ 时间到！答案是: ${data.word}`);
+    updateScores(data.players);
+    document.getElementById('guessInput').disabled = true;
+    myTurn = false;
+    setSheetMode(false);
+    document.getElementById('floatUndo').style.display = 'none';
+  });
+
+  socket.on('game-end', data => showGameEnd(data.rankings));
+}
+
+function createRoom() {
+  if (!socket) connect();
+  socket.emit('create-room', { roomId, playerName });
+  enterRoom();
+}
+function joinRoom() {
+  if (!socket) connect();
+  socket.emit('join-room', { roomId, playerName });
+  enterRoom();
+}
+function enterRoom() {
+  document.getElementById('lobby').style.display = 'none';
+  document.getElementById('room').style.display = 'flex';
+  document.getElementById('roomCode').textContent = roomId;
+}
+function startGame() { socket.emit('start-game'); }
+function setRounds() { socket.emit('set-rounds', { rounds: parseInt(document.getElementById('roundsSelect').value) }); }
+function setTime() { socket.emit('set-time', { seconds: parseInt(document.getElementById('timeSelect').value) }); }
+function leaveRoom() {
+  socket.disconnect(); socket = null;
+  document.getElementById('room').style.display = 'none';
+  document.getElementById('lobby').style.display = 'flex';
+  document.getElementById('nameInput').value = playerName;
+}
+
+function updateRoomUI(room) {
+  document.getElementById('playerCount').textContent = `${room.players.length} 人`;
+  document.getElementById('roundsSelect').value = room.totalRounds;
+  document.getElementById('timeSelect').value = room.roundTime;
+  document.getElementById('playersList').innerHTML = room.players.map((p, i) => `
+    <div class="player-chip">
+      <div class="avatar">${p.name[0]}</div>
+      <div>
+        <div class="info">${p.name}${i === 0 ? ' 👑' : ''}</div>
+        ${room.gameStarted ? `<div class="score">${p.score} 分</div>` : ''}
+      </div>
+    </div>
+  `).join('');
+  const isHost = room.players[0]?.name === playerName;
+  document.getElementById('startBtn').style.display = isHost ? 'block' : 'none';
+  document.getElementById('roundsSelect').disabled = !isHost;
+  document.getElementById('timeSelect').disabled = !isHost;
+}
+
+function showGameEnd(rankings) {
+  document.getElementById('game-end').classList.add('show');
+  const medals = ['🥇','🥈','🥉'];
+  document.getElementById('endContent').innerHTML = `
+    <h2>🏆 游戏结束</h2>
+    <p class="subtitle">最终排名</p>
+    ${rankings.map((r,i) => `
+      <div class="ranking-row${i===0?' rank1':''}">
+        <span class="rank-badge">${medals[i]||'#'+r.rank}</span>
+        <span class="rank-name">${r.name}</span>
+        <span class="rank-score">${r.score} 分</span>
+      </div>
+    `).join('')}
+    <button class="btn btn-primary" style="margin-top:20px" onclick="backToMenu()">🔄 返回大厅</button>
+  `;
+}
+
+function backToMenu() {
+  document.getElementById('game-end').classList.remove('show');
+  document.getElementById('game').style.display = 'none';
+  document.getElementById('room').style.display = 'none';
+  document.getElementById('lobby').style.display = 'flex';
+  document.getElementById('chat-messages').innerHTML = '';
+  myTurn = false; isErasing = false; sheetOpen = false; undoStack = [];
+  bottomSheet.classList.remove('open');
+  setSheetMode(false);
+  document.getElementById('floatUndo').style.display = 'none';
+  document.getElementById('word-card').classList.remove('show');
+  document.getElementById('score-overlay').classList.remove('show');
+  if (socket) { socket.disconnect(); socket = null; }
+}
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.style.display = 'block';
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.style.display = 'none', 2500);
+}
+
+document.getElementById('nameInput').value = '玩家' + Math.floor(Math.random() * 1000);
+resizeCanvas();
+</script>
+</body>
+</html>

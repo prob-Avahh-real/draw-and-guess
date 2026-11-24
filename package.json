@@ -5,10 +5,18 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "build": "node scripts/cap-copy-www.js",
+    "sync:android": "npx cap sync android",
+    "test": "node --test tests/game.test.mjs"
   },
   "dependencies": {
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/core": "^6.2.0",
     "express": "^4.21.0",
     "socket.io": "^4.7.5"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.2.0"
   }
 }
